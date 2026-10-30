@@ -9,5 +9,7 @@ build/
 mobmess_tmp/
 *.gz
 *.delta
+sa_cache/
+
 
 
