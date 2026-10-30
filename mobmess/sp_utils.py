@@ -74,7 +74,7 @@ def sp_mask(x, y=None, i=None, j=None, invert=False, triu=False, tril=False, blo
     """
     
     if y is not None:
-        assert y.dtype == np.bool
+        assert y.dtype == bool
         i, j = y.nonzero()
         assert as_flat(sp_as_indexable(y)[i,j]).all()
 
@@ -114,9 +114,17 @@ def sp_mask(x, y=None, i=None, j=None, invert=False, triu=False, tril=False, blo
         return new_x
 
     if invert:
-        new_x = copy_sp(sp_as_indexable(x))
-        new_x[i,j] = 0
-        new_x.eliminate_zeros()
+        coo = x.tocoo()
+        r, c, d = coo.row, coo.col, coo.data
+        if y is not None:
+            y_csr = sp_as_indexable(y)
+            in_y = as_flat(y_csr[r, c]) != 0
+            keep = ~in_y
+        else:
+            mask_mat = scipy.sparse.coo_matrix((np.ones(len(i), bool), (i, j)), shape=x.shape).tocsr()
+            in_mask = as_flat(mask_mat[r, c]) != 0
+            keep = ~in_mask
+        new_x = scipy.sparse.coo_matrix((d[keep], (r[keep], c[keep])), shape=x.shape).tocsr()
     else:
 #        if len(i)==0:  return x.copy()
 

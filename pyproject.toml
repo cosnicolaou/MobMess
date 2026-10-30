@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mobmess"
+version = "0.1.0"
+description = "Identifies evolutionary relations among mobile genetic elements, e.g. identify plasmid systems."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "GPL-3.0-or-later"}
+authors = [
+    {name = "Michael Ku Yu", email = "michaelkuyu@gmail.com"}
+]
+keywords = ["mobile genetic elements", "plasmid", "metagenomics"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+]
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "scikit-learn",
+    "igraph",
+    "numba",
+    "blosc",
+]
+
+[project.optional-dependencies]
+visualize = [
+    "matplotlib",
+    "seaborn",
+    "pypdf",
+    "jinja2",
+]
+test = [
+    "pytest",
+]
+
+[project.scripts]
+mobmess = "mobmess.mobmess_script:run"
+
+[project.urls]
+Source = "https://github.com/michaelkyu/mobmess/"

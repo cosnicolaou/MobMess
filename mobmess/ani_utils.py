@@ -98,12 +98,13 @@ def mash_dist(inp, out=None, inp2=None, pivot=False):
         mash_dist_long = utils.better_pd_concat(list(mash_dist_long), ignore_index=True)
 
         # Change fasta paths into contig names
-        mash_dist_long['s1'].cat.categories = [os.path.basename(x).rstrip('.fa').replace('.','_') for x in mash_dist_long['s1'].cat.categories]
-        mash_dist_long['s2'].cat.categories = [os.path.basename(x).rstrip('.fa').replace('.','_') for x in mash_dist_long['s2'].cat.categories]    
+        rename_fn = lambda x: os.path.basename(x).rstrip('.fa').replace('.','_')
+        mash_dist_long['s1'] = mash_dist_long['s1'].cat.rename_categories(rename_fn)
+        mash_dist_long['s2'] = mash_dist_long['s2'].cat.rename_categories(rename_fn)
 
         # Change distance to similarity
         mash_dist_long['sim'] = 1 - mash_dist_long['dist']
-        mash_dist_long.drop(columns='dist', inplace=True)
+        mash_dist_long = mash_dist_long.drop(columns='dist')
 
         p.terminate()
 
@@ -181,16 +182,16 @@ def read_fastANI(similarities_path, file_2_name=None, names=None, nrows=None):
         def rename(x):
             return file_2_name[x]
 
-    similarities['query'].cat.categories = [rename(x) for x in similarities['query'].cat.categories]
-    similarities['reference'].cat.categories = [rename(x) for x in similarities['reference'].cat.categories]
+    similarities['query'] = similarities['query'].cat.rename_categories(rename)
+    similarities['reference'] = similarities['reference'].cat.rename_categories(rename)
 
     contig_categ = similarities['query'].cat.categories.union(similarities['reference'].cat.categories)
     if names is not None:
         assert contig_categ.isin(names).all()
         contig_categ = names
 
-    similarities['query'].cat.set_categories(contig_categ, inplace=True)
-    similarities['reference'].cat.set_categories(contig_categ, inplace=True)
+    similarities['query'] = similarities['query'].cat.set_categories(contig_categ)
+    similarities['reference'] = similarities['reference'].cat.set_categories(contig_categ)
 
     return similarities
 
@@ -298,7 +299,7 @@ def derep_sources(similarities, similarity_threshold, min_alignment_fraction,
         print('Strongly connected components:', len(clusters))
 
     # Calculate the in-degree of every contig in its cluster (i.e. how many children it has in the cluster)
-    clusters_degrees = pd.Series(utils.as_flat(utils.sp_mask(sp.astype(np.int), blocks=clusters).T.dot(np.ones(sp.shape[0], dtype=np.int))), rownames)
+    clusters_degrees = pd.Series(utils.as_flat(utils.sp_mask(sp.astype(int), blocks=clusters).T.dot(np.ones(sp.shape[0], dtype=int))), rownames)
     clusters_sumANI = pd.Series(utils.as_flat(utils.sp_mask(sp_fullANI, blocks=clusters).T.dot(np.ones(sp.shape[0]))), rownames)
 
     # Create contigs-by-clusters network (i.e. cluster membership matrix)
@@ -349,7 +350,7 @@ def derep_sources(similarities, similarity_threshold, min_alignment_fraction,
 
     # Calculate weak components ("meta clusters")
     meta_clusters = list(utils.create_ig(clusters_2_clusters, directed=True).components('weak'))
-    meta_clusters_assignments = np.empty(clusters_2_clusters.shape[0], np.int)
+    meta_clusters_assignments = np.empty(clusters_2_clusters.shape[0], int)
     for i, x in enumerate(meta_clusters):
         meta_clusters_assignments[x] = i
 
@@ -398,8 +399,9 @@ def derep_sources(similarities, similarity_threshold, min_alignment_fraction,
          lengths.to_frame('length'),
          clusters_degrees.to_frame('nchildren_in_cluster'),
          clusters_sumANI.to_frame('avgANI'),
-         circular_df.reindex(rownames).to_frame('circular').fillna(False).rename_axis('contig')])
+         circular_df.reindex(lengths.index).to_frame('circular').fillna(False).rename_axis('contig')])
     contigs_df = contigs_df.rename_axis('contig').reset_index()
+    contigs_df['circular'] = contigs_df['circular'].fillna(False).astype(bool)
 
     # For each contig, add info about the cluster it is in
     clusters_df = functools.reduce(lambda x, y: x.merge(y, on='cluster', how='outer'),
@@ -803,8 +805,8 @@ def read_mummer_aln_blocks(maxmatch_file, output=None, tmp=None, delete_tmp=None
         utils.run_cmd(f"grep '>' {fname} > {fname_headers}", verbose=True)
         utils.run_cmd(f"grep -v '>' {fname} > {fname_blocks}", verbose=True)
 
-        headers = pd.read_csv(fname_headers, delim_whitespace=True, header=None, names=['nl', 'ref','query','ref_len','query_len'])
-        blocks = pd.read_csv(fname_blocks, delim_whitespace=True, header=None, names=['nl', 'ref_start', 'ref_end', 'query_start', 'query_end', 'errors', 'mismatches', 'nonalpha'])
+        headers = pd.read_csv(fname_headers, sep=r'\s+', header=None, names=['nl', 'ref','query','ref_len','query_len'])
+        blocks = pd.read_csv(fname_blocks, sep=r'\s+', header=None, names=['nl', 'ref_start', 'ref_end', 'query_start', 'query_end', 'errors', 'mismatches', 'nonalpha'])
         headers = headers.astype({'nl' : int})
         blocks = blocks.astype({'nl' : int})
         aln_blocks = pd.merge_asof(blocks, headers, on='nl', direction='backward').drop(columns=['nl'])
@@ -1166,7 +1168,7 @@ def create_clusters_2_clusters_visualization(
             vertex_attrs['node_type'] = 'plasmid'
 
             sample_list = sample_2_clusters['col'].unique()
-            vertex_attrs = vertex_attrs.append(pd.Series('sample', sample_list).to_frame('node_type'))
+            vertex_attrs = pd.concat([vertex_attrs, pd.Series('sample', sample_list).to_frame('node_type')])
 
             # Check that this is true, because I will use color for fragment plasmids (red) for samples
             assert remove_fragment_plasmids
@@ -1254,7 +1256,7 @@ def separate_cargo_func(func,
     backbone_2_accessions['is_backbone_accession'] = True
     # Label which rows represent an accession that occurs somewhere in the associated backbone
     all_func = all_func.merge(backbone_2_accessions, on=['backbone', 'accession'], how='left').astype({'accession':'category'})
-    all_func['is_backbone_accession'].fillna(False, inplace=True)
+    all_func['is_backbone_accession'] = all_func['is_backbone_accession'].fillna(False)
     # Define the cargo annotations as those that occur in a contig where (1) the contig has a backbone, and (2) the annotation is not on the backbone
     in_system_func = all_func.dropna(subset=['backbone'])
     cargo_func = utils.subset(in_system_func, is_backbone_accession=False)
@@ -1417,7 +1419,7 @@ def create_contig_2_contig_igraph(similarities, contigs_df, output=None):
     # tmp_contigs = pd.concat([tmp_contigs, tmp_contigs.iloc[0].copy().rename('asdf').to_frame().T])
 
     # Remove self-edges
-    tmp = similarities[similarities['query'] != similarities['reference']]
+    tmp = similarities[similarities['query'].to_numpy() != similarities['reference'].to_numpy()]
 
     print('output:', output)
 

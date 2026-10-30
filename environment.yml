@@ -1,0 +1,23 @@
+name: mobmess
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.13
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - python-igraph
+  - numba
+  - python-blosc
+  - mummer4
+  - matplotlib
+  - seaborn
+  - jinja2
+  - pypdf
+  - pytest
+  - pip
+  - pip:
+    - -e ../PlasX
+    - -e .

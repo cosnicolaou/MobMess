@@ -833,7 +833,7 @@ def enrich_pair(functions,
             # cap_per_contig=False or contigs_groupings=None
             dic['groups'] = dic['contigs'].values
 
-    dic.set_index('accession', inplace=True)
+    dic = dic.set_index('accession')
     # Add source information to each accession
     if 'source' in functions.columns:
         dic = dic.merge(functions[['accession', 'source']].drop_duplicates().set_index('accession'), left_index=True, right_index=True, how='left')
@@ -1430,7 +1430,7 @@ def plot_contig(gene_calls, length=None, functions=None, ax=None, tier=None,
     ax.set_xlim(xmin, xmax)
 
     ax.set_ylim(-0.1, (max_levels if tier else 0) + 1.1)
-    ax.grid(b=False, which='both', axis='y')
+    ax.grid(visible=False, which='both', axis='y')
     ax.set_yticklabels([])
 
     # Turn on minor ticks
@@ -2071,7 +2071,7 @@ def visualize_alignment(
             
             # Swap left and right gap, if orientation of A is reversed
             # Note: if a loci has multiple instances of the anchor gene, then choose one of them randomly to orient
-            gaps = pd.concat([xmin, xmax, left_gap, right_gap, loci_genes_pivot.drop_duplicates(['contig']).set_index('contig')['direction']], 1)
+            gaps = pd.concat([xmin, xmax, left_gap, right_gap, loci_genes_pivot.drop_duplicates(['contig']).set_index('contig')['direction']], axis=1)
             gaps['xmin'], gaps['xmax'], gaps['left_gap'], gaps['right_gap'] = zip(*[(start,stop,x,y) if d=='f' else (stop,start,y,x) for start,stop,x,y,d in gaps[['xmin','xmax','left_gap','right_gap','direction']].to_records(index=False)])
 
             # Rescale xmin/xmax across all loci, so that they are on the same plotting scale
@@ -2229,7 +2229,7 @@ def visualize_alignment(
 
             ax_cov.set_ylabel(None)
             ax_cov.tick_params(labelleft=True, left=True, right=False, labelright=False)
-            ax_cov.grid(b=False, which='both', axis='y')
+            ax_cov.grid(visible=False, which='both', axis='y')
 
         # Create vertical bars to demarcate the boundaries of the locus
         for x in [r['start'], r['stop']]: ax.axvline(x)
@@ -2252,7 +2252,7 @@ def visualize_alignment(
 
                 # Because of this x-limits hack, some xticks will be negative values or go beyond the contig length. REMOVE THESE
                 xticks = ax2.get_xticks().tolist()
-#                ax2.set_xticks(xticks)
+                ax2.set_xticks(xticks)
                 ax2.set_xticklabels([str(int(x)) if ((x >= 0) and (x < this_contig_length)) else '' for x in xticks])
 
         if plot_cov:
@@ -2368,27 +2368,38 @@ def visualize_alignment(
         tmp = tmp.style.apply(color_cell, axis=0)
         tmp = tmp.apply(justify_cell, axis=0)
         tmp = tmp.set_properties(**{'border-color': 'black', 'border' : '1px solid black'})
-        tmp = tmp.set_table_styles([{'props' : [('border-collapse', 'collapse')]}])
-        tmp = tmp.hide_index()
+        tmp = tmp.set_table_styles([{'selector': 'table', 'props' : [('border-collapse', 'collapse')]}])
+        if hasattr(tmp, 'hide'):
+            tmp = tmp.hide(axis='index')
+        else:
+            tmp = tmp.hide_index()
 
-        # Check necessary packages, pdfkit and wkhtmltopdf, for writing dataframe to pdf file
+        # Write dataframe to pdf or html file
+        rendered_html = tmp.to_html() if hasattr(tmp, 'to_html') else tmp.render()
+        wkhtmltopdf_cmd = shutil.which('wkhtmltopdf')
+        has_pdfkit = False
         try:
             import pdfkit
+            has_pdfkit = True
         except ImportError:
-            raise Exception("You need to install pdfkit (`pip install pdfkit`).")
-        try:
-            from PyPDF2 import PdfFileMerger
-        except ImportError:
-            raise Exception("You need to install pypdf2 (`conda install -c conda-forge pypdf2`)")
-        wkhtmltopdf_cmd = shutil.which('wkhtmltopdf')
-        if wkhtmltopdf_cmd is None:
-            raise Exception("The command wkhtmltopdf could not be found. You may need to install wkhtmltopdf (`conda install -c conda-forge wkhtmltopdf`)."\
-                            "If wkhtmltopdf is already installed, you may need to set the $PATH environment variable to include the location of wkhtmltopdf.")
+            pass
 
-        # Write dataframe to pdf file
-        pdfkit.from_string(tmp.render(), f'{output}_annotations.pdf',
-                           options={'--page-height' : '410mm', '--page-width': '{}mm'.format(int(175 * len(sources_display)))},
-                           configuration=pdfkit.configuration(wkhtmltopdf=wkhtmltopdf_cmd))
+        annotations_pdf = f'{output}_annotations.pdf'
+        have_annotations_pdf = False
+
+        if has_pdfkit and (wkhtmltopdf_cmd is not None):
+            try:
+                pdfkit.from_string(rendered_html, annotations_pdf,
+                                   options={'--page-height' : '410mm', '--page-width': '{}mm'.format(int(175 * len(sources_display)))},
+                                   configuration=pdfkit.configuration(wkhtmltopdf=wkhtmltopdf_cmd))
+                have_annotations_pdf = True
+            except Exception as e:
+                print(f"WARNING: Failed to render annotations PDF via pdfkit ({e}). Saving as HTML instead.")
+        else:
+            annotations_html = f'{output}_annotations.html'
+            with open(annotations_html, 'w') as f:
+                f.write(rendered_html)
+            print(f"WARNING: wkhtmltopdf or pdfkit not available. Annotations saved to HTML: {annotations_html}")
 
         if write_loci:
             # Write dataframe of loci to text file
@@ -2399,14 +2410,24 @@ def visualize_alignment(
                     tmp['description'] = [x.replace('\n', ' ') for x in tmp['description']]
             tmp.to_csv('{}_loci.txt'.format(output), sep='\t', header=True, index=False)
 
-        # Merge pdf files
-        merger = PdfFileMerger()
-        for pdf in [f'{output}_genome_plot.pdf', f'{output}_annotations.pdf']:
-            merger.append(pdf)
-        merger.write(f'{output}')
-        merger.close()
-        os.remove(f'{output}_genome_plot.pdf')
-        os.remove(f'{output}_annotations.pdf')
+        # Merge pdf files if annotations pdf was produced, otherwise use genome plot
+        if have_annotations_pdf and os.path.exists(annotations_pdf):
+            try:
+                from pypdf import PdfMerger
+            except ImportError:
+                try:
+                    from PyPDF2 import PdfMerger
+                except ImportError:
+                    from PyPDF2 import PdfFileMerger as PdfMerger
+            merger = PdfMerger()
+            for pdf in [f'{output}_genome_plot.pdf', annotations_pdf]:
+                merger.append(pdf)
+            merger.write(f'{output}')
+            merger.close()
+            os.remove(f'{output}_genome_plot.pdf')
+            os.remove(annotations_pdf)
+        else:
+            shutil.move(f'{output}_genome_plot.pdf', f'{output}')
 
     if not show:
         plt.close(fig)
@@ -2649,7 +2670,7 @@ def slop(functions, slop, sizes=None):
         assert functions['size'].notna().all(), 'Sizes specified are NA for some contigs, e.g. {}'.format(functions[functions['size'].isna()].sample(5))
 
         functions['stop'] = np.minimum(functions['stop'], functions['size'])
-        functions.drop(columns=['size'], inplace=True)
+        functions = functions.drop(columns=['size'])
 
     functions['start'] = np.maximum(0, functions['start'])
 
@@ -2703,7 +2724,10 @@ def interval_merge_self(functions, apply=None):
                     # merged_intervals.append( (this_contig, start, stop) )
                 return pd.concat(merged_intervals)
         
-    return functions.groupby('contig', as_index=False, group_keys=False).apply(interval_merge_same_contig).reset_index(drop=True)
+    res = [interval_merge_same_contig(group) for _, group in functions.groupby('contig', sort=False)]
+    if not res:
+        return pd.DataFrame(columns=['contig', 'start', 'stop'])
+    return pd.concat(res, ignore_index=True)
 
 
 def overlap(start1, stop1, start2, stop2):
@@ -2753,7 +2777,7 @@ def interval_merge_same_contig(functions, functions2, suffix=None):
     #                               pd.concat(functions2_repeated).reset_index(drop=True)], 1)
     # functions_merged = pd.concat([functions.iloc[np.repeat(np.arange(len(functions)), [len(x) for x in mask_list])].reset_index(drop=True),
     #                               functions2_repeated], 1)
-    functions_merged = pd.concat([functions_repeated, functions2_repeated], 1)
+    functions_merged = pd.concat([functions_repeated, functions2_repeated], axis=1)
 
 #    display(functions_merged)
     return functions_merged

@@ -144,7 +144,7 @@ def create_ig(X,
 
             n_nodes = len(names)
 
-        vertex_attrs = {c : vertex_attrs[c].values.flatten() for c in vertex_attrs.columns}
+        vertex_attrs = {c : np.asarray(vertex_attrs[c]).flatten() for c in vertex_attrs.columns}
 
         edges = list(zip(edges_i, edges_j))
 
@@ -213,7 +213,7 @@ def create_ig(X,
     if output is not None:
         # - Check that `output` is a string or pathlib.Path object
         # - Convert to str (because sending a Path object to igraph.write_graphml will cause segmentation fault!!!)
-        assert isinstance(output, (str, pathlib.PosixPath))
+        assert isinstance(output, (str, pathlib.Path))
         output = str(output)
         os.makedirs(os.path.dirname(os.path.abspath(output)), exist_ok=True)
         g.write_graphml(output)

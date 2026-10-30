@@ -30,32 +30,15 @@ def to_chunks(it, k=None, chunk=None, gen=False):
 
 
 def setdiag(X, values):
-    """Set the diagonal of a scipy.sparse matrix. A reimplementation of scipy.sparse's setdiag method.
+    """Set the diagonal of a scipy.sparse matrix.
 
-    This implementation avoids explicitly trying to set a diagonal element that is already 0 to be 0, again.
-
-    The scipy's implementation would retain values of 0, which is inefficient.
-
-    https://docs.scipy.org/doc/scipy-0.13.0/reference/generated/scipy.sparse.csc_matrix.setdiag.html
+    Uses X.setdiag() and eliminates any explicit zeros to preserve sparsity without
+    raising SparseEfficiencyWarning.
     """
-
-    try:
-        iter(values)
-    except:
-        values = np.repeat(np.array([values], X.dtype), X.shape[0])
-
-    assert X.shape[0] == X.shape[1]
-    assert X.shape[0] == len(values)
-
     assert not scipy.sparse.isspmatrix_coo(X), 'Cannot apply on coo_matrix'
-
-    # Filter out zeros
-    i = np.arange(X.shape[0])
-    to_use = (X.diagonal() != 0) | (values != 0)
-    i, values = i[to_use], values[to_use]
-
-    # Set diagonal
-    X[i, i] = values
+    assert X.shape[0] == X.shape[1], 'Input is not a square matrix'
+    X.setdiag(values)
+    X.eliminate_zeros()
 
 
 def merge_gene_calls_and_functions(functions,
