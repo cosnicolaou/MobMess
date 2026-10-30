@@ -90,6 +90,13 @@ pip install -e .
 * **Git Configuration**: Added `.gitignore` to both repositories to prevent caching/build artifacts from being tracked.
 * **Automated Tests**: Added `test/test_mobmess.py` providing unit and end-to-end regression tests.
 
+### F. MUMmer4 Alignment Optimization & Suffix Array Caching
+* **`--save-sa` & `--load-sa`**:
+  * Because `libdivsufsort` suffix array construction is single-threaded in MUMmer4, indexing large databases (e.g. 7.8 GB of plasmids) takes ~30–45 minutes of single-core compute before multi-threading begins.
+  * Added `--save-sa <prefix>` and `--load-sa <prefix>` to `mobmess systems` and `ani_utils.run_nucmer()`, leveraging MUMmer4's native `--save` and `--load` capabilities to persist the 5 index files (`.sa`, `.isa`, `.aux`, `.lcp`, `.kmer`) and load them directly on subsequent runs.
+* **`--minmatch` Configuration**:
+  * Exposed `--minmatch` (default `16`) on `mobmess systems` to allow tuning anchor match sensitivity and mitigating seed explosion on repetitive or large-scale metagenomic datasets.
+
 ---
 
 ## 3. Verification Results

@@ -30,7 +30,14 @@ def infer_systems(args):
             nucmer_summary_output = tmp / 'mummer_align.delta.qr_filter.summary.pkl.blp'
 
             # Run nucmer (from the MUMmer package) to align sequences
-            ani_utils.run_nucmer(args.sequences, nucmer_first_output, threads=threads)
+            ani_utils.run_nucmer(
+                args.sequences,
+                nucmer_first_output,
+                threads=threads,
+                save_sa=args.save_sa,
+                load_sa=args.load_sa,
+                minmatch=args.minmatch,
+            )
 
             # Use MUMmer's delta-filter tool to remove overlapping alignment blocks, to create a set of blocks that represents a
             # 1-to-1 alignment between very pair of sequences
@@ -185,6 +192,15 @@ def get_parser():
     optional.add_argument(
         '--tmp', dest='tmp', default=None,
         help="""Directory to save intermediate files, including ones created by nucmer. Default: a temporary directory that is deleted upon termination""")
+    optional.add_argument(
+        '--save-sa', dest='save_sa', default=None,
+        help="""Prefix to save the MUMmer4 suffix array files for later reuse.""")
+    optional.add_argument(
+        '--load-sa', dest='load_sa', default=None,
+        help="""Prefix to load precomputed MUMmer4 suffix array files, skipping the initial indexing phase.""")
+    optional.add_argument(
+        '--minmatch', dest='minmatch', type=int, default=16,
+        help="""Minimum length of a single exact match in nucmer. Default: 16""")
 
 
     ###### Visualize the alignment of multiple plasmids or sequences ########
