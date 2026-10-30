@@ -19,8 +19,23 @@ echo "=========================================================="
 
 mkdir -p "${OUT_DIR}"
 
+# Locate python and mobmess executable
+if [ -x "/opt/homebrew/Caskroom/miniforge/base/envs/mobmess-py313/bin/python3" ]; then
+    PYTHON_CMD="/opt/homebrew/Caskroom/miniforge/base/envs/mobmess-py313/bin/python3"
+    MOBMESS_CMD="/opt/homebrew/Caskroom/miniforge/base/envs/mobmess-py313/bin/mobmess"
+elif command -v mobmess >/dev/null 2>&1; then
+    PYTHON_CMD="python3"
+    MOBMESS_CMD="mobmess"
+elif command -v conda >/dev/null 2>&1; then
+    PYTHON_CMD="conda run -n mobmess-py313 python3"
+    MOBMESS_CMD="conda run -n mobmess-py313 mobmess"
+else
+    PYTHON_CMD="python3"
+    MOBMESS_CMD="python -m mobmess.mobmess_script"
+fi
+
 # Run mobmess systems using the precomputed pairwise alignments (as specified in the paper tutorial)
-mobmess systems \
+${MOBMESS_CMD} systems \
     --sequences "${TEST_DIR}/${PREFIX}.fa" \
     --complete "${TEST_DIR}/${PREFIX}-circular.txt" \
     --ani "${TEST_DIR}/${PREFIX}-mobmess_ani.txt" \
@@ -55,7 +70,7 @@ done
 # from before the author's code fix in commit 1bbdd1a1 (see descrepancies.md).
 # Here we check that the 4 systems (PS1..PS4) and their backbone clusters match.
 echo "  [INFO] Checking _systems.txt system definitions..."
-SYSTEMS_MATCH=$(python3 -c "
+SYSTEMS_MATCH=$(${PYTHON_CMD} -c "
 import pandas as pd
 ref = pd.read_csv('${TEST_DIR}/${PREFIX}-mobmess_systems.txt', sep='\t')
 gen = pd.read_csv('${OUT_DIR}/${PREFIX}-mobmess_systems.txt', sep='\t')
