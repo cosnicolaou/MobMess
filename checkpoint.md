@@ -29,12 +29,21 @@ A full run of `mobmess systems` consists of the following phases:
 
 ## Detailed Checkpointing Strategy by Phase
 
-### Phase 1: Reference Indexing (Suffix Array Construction)
-* **Status**: **Implemented** via `--save-sa` and `--load-sa`.
-* **Mechanism**:
-  - `nucmer` builds the 48-bit suffix array in memory.
-  - With `--save-sa <prefix>`, MUMmer4 flushes the binary index files (`.sa`, `.isa`, `.aux`, `.lcp`, `.kmer`) to disk immediately after index construction finishes (before query matching begins).
-  - Subsequent runs with `--load-sa <prefix>` bypass Phase 1 entirely, memory-mapping the pre-built index in ~5 seconds.
+### Phase 1: Reference Indexing & Batch Processing (`--batch`)
+* **Status**: **Implemented** via `--batch`.
+* **Algorithm Details in MUMmer 4**:
+  - Legacy MUMmer 3 used **suffix trees** (via Kurtz's `stree` library), which were pointer-heavy and restricted to 32-bit genomes.
+  - MUMmer 4 replaced suffix trees with **`compactsufsort`** (a custom 48-bit extension of Yuta Mori's `libdivsufsort`), combined with an augmented **Sparse Suffix Array (sparseSA)** data structure:
+    - Suffix sort of Type $B^*$ suffixes using two-stage ternary multikey quicksort (`sort_typeBstar` / `tr::sort`).
+    - Induced sorting to populate the full suffix array (`SA`).
+    - Inverse suffix array (`ISA`) and Longest Common Prefix (`LCP`) array computation via the Kasai et al. algorithm.
+    - K-mer lookup table (`KMR`) and child tables (`CHILD`) for fast anchor query traversal.
+* **Why Monolithic `--save`/`--load` Failed on Large Plasmid FASTA Files**:
+  - `compactsufsort` is single-threaded. On 8.4 GB of repetitive plasmids, sorting all suffixes simultaneously degrades `tr::sort` into an $O(N^2)$ sorting trap that stalls for 20+ hours on 1 core.
+  - Furthermore, MUMmer 4 does not support `--save`/`--load` simultaneously with `--batch`.
+* **The `--batch` Solution**:
+  - `mobmess systems` now supports `--batch <bases>` (e.g. `--batch 1000000000` for 1GB chunks).
+  - MUMmer 4 loads and indexes the reference in fast 1GB increments (taking only ~2 minutes per batch instead of days), streams all queries against each chunk across all threads, and proceeds to the next batch.
 
 ---
 

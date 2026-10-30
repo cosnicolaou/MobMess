@@ -676,7 +676,7 @@ def run_mummer(fasta, verbose=False, minmatch=None, threads=None):
 
     return aln_blocks
 
-def run_nucmer(fasta, output, threads=None, save_sa=None, load_sa=None, minmatch=16):
+def run_nucmer(fasta, output, threads=None, batch=None, minmatch=16):
     """
     Run nucmer, use `maxmatch` which allows for mapping of non-unique "anchors"
     NOTE: the uniqueness of an anchor seems to be based on its presence across all sequences in a mult-sequence fasta file.
@@ -692,13 +692,8 @@ def run_nucmer(fasta, output, threads=None, save_sa=None, load_sa=None, minmatch
         threads = utils.get_max_threads()
 
     extra_args = []
-    if save_sa:
-        sa_dir = os.path.dirname(os.path.abspath(save_sa))
-        if sa_dir:
-            os.makedirs(sa_dir, exist_ok=True)
-        extra_args.append(f"--save={save_sa}")
-    if load_sa:
-        extra_args.append(f"--load={load_sa}")
+    if batch:
+        extra_args.append(f"--batch={batch}")
 
     extra_str = (" " + " ".join(extra_args)) if extra_args else ""
     cmd = f"nucmer --maxmatch --minmatch={minmatch}{extra_str} -p {output} -t {threads} {fasta} {fasta}"

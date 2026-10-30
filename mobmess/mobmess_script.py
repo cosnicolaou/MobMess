@@ -34,8 +34,7 @@ def infer_systems(args):
                 args.sequences,
                 nucmer_first_output,
                 threads=threads,
-                save_sa=args.save_sa,
-                load_sa=args.load_sa,
+                batch=args.batch,
                 minmatch=args.minmatch,
             )
 
@@ -193,11 +192,8 @@ def get_parser():
         '--tmp', dest='tmp', default=None,
         help="""Directory to save intermediate files, including ones created by nucmer. Default: a temporary directory that is deleted upon termination""")
     optional.add_argument(
-        '--save-sa', dest='save_sa', default=None,
-        help="""Prefix to save the MUMmer4 suffix array files for later reuse.""")
-    optional.add_argument(
-        '--load-sa', dest='load_sa', default=None,
-        help="""Prefix to load precomputed MUMmer4 suffix array files, skipping the initial indexing phase.""")
+        '--batch', dest='batch', type=int, default=None,
+        help="""Proceed by batch of chunks of BASES from the reference in MUMmer4 (e.g. 1000000000 for 1GB chunks). Prevents suffix array sorting slowdowns on large FASTA files.""")
     optional.add_argument(
         '--minmatch', dest='minmatch', type=int, default=16,
         help="""Minimum length of a single exact match in nucmer. Default: 16""")
