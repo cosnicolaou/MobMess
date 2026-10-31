@@ -172,3 +172,47 @@ def test_systems_batch():
         assert size1 > 1000 and size2 > 1000
         # Both should produce comparable alignment volume (within 5%)
         assert abs(size1 - size2) / size1 < 0.05
+
+
+def test_systems_checkpoint_reuse():
+    from mobmess.mobmess_script import get_parser
+    parser = get_parser()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_dir = os.path.join(tmpdir, 'mobmess_tmp')
+        out_prefix = os.path.join(tmpdir, 'out')
+        fa_file = str(TEST_DIR / 'test-contigs.fa')
+        circ_file = str(TEST_DIR / 'test-contigs-circular.txt')
+
+        # 1. First run creates intermediate files in tmp_dir
+        args = parser.parse_args([
+            'systems',
+            '-s', fa_file,
+            '-c', circ_file,
+            '-o', out_prefix,
+            '--tmp', tmp_dir,
+            '-T', '2',
+        ])
+        args.func(args)
+
+        delta_file = os.path.join(tmp_dir, 'mummer_align.delta')
+        done_file = os.path.join(tmp_dir, 'mummer_align.done')
+        assert os.path.exists(delta_file)
+        assert os.path.exists(done_file)
+        mtime1 = os.path.getmtime(delta_file)
+
+        # 2. Re-running should reuse existing mummer_align.delta (mtime unchanged)
+        out_prefix2 = os.path.join(tmpdir, 'out2')
+        args2 = parser.parse_args([
+            'systems',
+            '-s', fa_file,
+            '-c', circ_file,
+            '-o', out_prefix2,
+            '--tmp', tmp_dir,
+            '-T', '2',
+        ])
+        args2.func(args2)
+
+        mtime2 = os.path.getmtime(delta_file)
+        assert mtime1 == mtime2, "Existing mummer_align.delta should not be overwritten"
+        assert os.path.exists(out_prefix2 + '_contigs.txt')

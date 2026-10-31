@@ -676,7 +676,41 @@ def run_mummer(fasta, verbose=False, minmatch=None, threads=None):
 
     return aln_blocks
 
-def run_nucmer(fasta, output, threads=None, batch=None, minmatch=16):
+def _format_size(num_bytes):
+    if num_bytes < 1024:
+        return f"{num_bytes} B"
+    elif num_bytes < 1024 * 1024:
+        return f"{num_bytes / 1024:.1f} KB"
+    elif num_bytes < 1024 * 1024 * 1024:
+        return f"{num_bytes / (1024 * 1024):.2f} MB"
+    else:
+        return f"{num_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+def _format_duration(seconds):
+    seconds = int(seconds)
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    secs = seconds % 60
+    if hours > 0:
+        return f"{hours}h {minutes:02d}m {secs:02d}s"
+    elif minutes > 0:
+        return f"{minutes}m {secs:02d}s"
+    else:
+        return f"{secs}s"
+
+def _get_proc_info(pid):
+    try:
+        out = subprocess.check_output(['ps', '-p', str(pid), '-o', '%cpu,rss'], text=True).strip().splitlines()
+        if len(out) > 1:
+            parts = out[1].split()
+            cpu, rss = parts[0], int(parts[1])
+            rss_str = f"{rss // 1024} MB" if rss >= 1024 else f"{rss} KB"
+            return f"CPU: {cpu}% | RSS: {rss_str}"
+    except Exception:
+        pass
+    return ""
+
+def run_nucmer(fasta, output, threads=None, batch=None, minmatch=16, progress_interval=60):
     """
     Run nucmer, use `maxmatch` which allows for mapping of non-unique "anchors"
     NOTE: the uniqueness of an anchor seems to be based on its presence across all sequences in a mult-sequence fasta file.
@@ -687,6 +721,7 @@ def run_nucmer(fasta, output, threads=None, batch=None, minmatch=16):
 
     ~49 min on all predicted plasmids with 252 cores
     """
+    import threading
 
     if threads is None:
         threads = utils.get_max_threads()
@@ -697,7 +732,42 @@ def run_nucmer(fasta, output, threads=None, batch=None, minmatch=16):
 
     extra_str = (" " + " ".join(extra_args)) if extra_args else ""
     cmd = f"nucmer --maxmatch --minmatch={minmatch}{extra_str} -p {output} -t {threads} {fasta} {fasta}"
-    utils.run_cmd(cmd, verbose=True)
+
+    utils.tprint(f"Running command: {cmd}")
+    delta_file = f"{output}.delta"
+    done_file = f"{output}.done"
+
+    t0 = time.time()
+    proc = subprocess.Popen(cmd, shell=True)
+
+    stop_event = threading.Event()
+
+    def _monitor():
+        while not stop_event.wait(timeout=progress_interval):
+            if proc.poll() is not None:
+                break
+            elapsed = time.time() - t0
+            size = os.path.getsize(delta_file) if os.path.exists(delta_file) else 0
+            size_str = _format_size(size)
+            proc_info = _get_proc_info(proc.pid)
+            info_suffix = f" | {proc_info}" if proc_info else ""
+            utils.tprint(f"[nucmer progress] Elapsed: {_format_duration(elapsed)} | Delta: {size_str}{info_suffix}")
+
+    monitor_thread = threading.Thread(target=_monitor, daemon=True)
+    monitor_thread.start()
+
+    proc.wait()
+    stop_event.set()
+    monitor_thread.join(timeout=2.0)
+
+    if proc.returncode != 0:
+        raise RuntimeError(f"nucmer failed with exit code {proc.returncode}: {cmd}")
+
+    elapsed = time.time() - t0
+    final_size = os.path.getsize(delta_file) if os.path.exists(delta_file) else 0
+    utils.tprint(f"[nucmer] Finished in {_format_duration(elapsed)}. Output delta size: {_format_size(final_size)}")
+    with open(done_file, 'w') as f:
+        f.write('done\n')
 
 def mummer_fast_deltafilter(mummer_delta_file, outfile, n_jobs=None, delta_cmd=None, tmp=None):
     """

@@ -1,3 +1,4 @@
+import os
 import argparse
 import textwrap
 
@@ -22,42 +23,59 @@ def infer_systems(args):
 
         if args.ani is None:
 
-            utils.tprint('Calculating pairwise alignments and ANI')
-
             nucmer_first_output = tmp / 'mummer_align'
+            nucmer_delta_file = f"{nucmer_first_output}.delta"
+            nucmer_done_file = f"{nucmer_first_output}.done"
+
             nucmer_delta_output = tmp / 'mummer_align.qr_filter'
             nucmer_delta_pkl_output = tmp / 'mummer_align.qr_filter.pkl.blp'
             nucmer_summary_output = tmp / 'mummer_align.delta.qr_filter.summary.pkl.blp'
 
-            # Run nucmer (from the MUMmer package) to align sequences
-            ani_utils.run_nucmer(
-                args.sequences,
-                nucmer_first_output,
-                threads=threads,
-                batch=args.batch,
-                minmatch=args.minmatch,
-            )
+            # 1. Run nucmer or reuse existing alignment
+            if os.path.exists(nucmer_done_file) or (os.path.exists(nucmer_delta_file) and os.path.getsize(nucmer_delta_file) > 0):
+                size_mb = os.path.getsize(nucmer_delta_file) / (1024 * 1024)
+                utils.tprint(f'Found existing nucmer alignment delta at {nucmer_delta_file} ({size_mb:.1f} MB); reusing and skipping nucmer alignment.')
+            else:
+                utils.tprint('Calculating pairwise alignments and ANI')
+                ani_utils.run_nucmer(
+                    args.sequences,
+                    nucmer_first_output,
+                    threads=threads,
+                    batch=args.batch,
+                    minmatch=args.minmatch,
+                )
 
-            # Use MUMmer's delta-filter tool to remove overlapping alignment blocks, to create a set of blocks that represents a
-            # 1-to-1 alignment between very pair of sequences
-            ani_utils.mummer_fast_deltafilter(
-                str(nucmer_first_output) + '.delta',
-                nucmer_delta_output,
-                n_jobs=threads,
-                tmp=tmp / 'mummer_align_delta_scripts')
+            # 2. Delta filter or reuse existing filtered delta/blocks
+            if os.path.exists(nucmer_delta_pkl_output):
+                utils.tprint(f'Found cached alignment blocks at {nucmer_delta_pkl_output}; reusing.')
+                aln_blocks = utils.unpickle(nucmer_delta_pkl_output)
+            else:
+                if os.path.exists(nucmer_delta_output) and os.path.getsize(nucmer_delta_output) > 0:
+                    utils.tprint(f'Found existing filtered delta at {nucmer_delta_output}; reusing.')
+                else:
+                    # Use MUMmer's delta-filter tool to remove overlapping alignment blocks, to create a set of blocks that represents a
+                    # 1-to-1 alignment between very pair of sequences
+                    ani_utils.mummer_fast_deltafilter(
+                        str(nucmer_first_output) + '.delta',
+                        nucmer_delta_output,
+                        n_jobs=threads,
+                        tmp=tmp / 'mummer_align_delta_scripts')
 
-            # Parse the filtered alignment blocks
-            aln_blocks = ani_utils.read_mummer_aln_blocks(
-                nucmer_delta_output, 
-                output=nucmer_delta_pkl_output,
-                tmp=tmp,
-                delete_tmp=False,
-                filename_prefix='mummer_align.delta')
+                # Parse the filtered alignment blocks
+                aln_blocks = ani_utils.read_mummer_aln_blocks(
+                    nucmer_delta_output, 
+                    output=nucmer_delta_pkl_output,
+                    tmp=tmp,
+                    delete_tmp=False,
+                    filename_prefix='mummer_align.delta')
 
-            similarities = ani_utils.get_mummer_query_coverage_py(aln_blocks, output=nucmer_summary_output)
-
-            # ref query query_cov query_cov_uniq mismatches nblocks ANI full_ANI
-            similarities = utils.unpickle(nucmer_summary_output)
+            # 3. Summary coverage calculation or reuse existing
+            if os.path.exists(nucmer_summary_output):
+                utils.tprint(f'Found cached summary coverage at {nucmer_summary_output}; reusing.')
+                similarities = utils.unpickle(nucmer_summary_output)
+            else:
+                similarities = ani_utils.get_mummer_query_coverage_py(aln_blocks, output=nucmer_summary_output)
+                similarities = utils.unpickle(nucmer_summary_output)
 
             # Save the alignment summary into a tab-separated text file
             utils.tprint('Columns:', similarities.columns)
